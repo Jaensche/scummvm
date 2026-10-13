@@ -48,11 +48,15 @@ public:
 
 	void InitGump(Gump *newparent, bool take_focus = true) override;
 
+	void Close(bool no_del = false) override;
+
 	void run() override;
 
+	void Paint(RenderSurface *surf, int32 lerp_factor, bool scaled) override;
 	void PaintThis(RenderSurface *, int32 lerp_factor, bool scaled) override;
 
 	uint16 TraceObjId(int32 mx, int32 my) override;
+	bool PointOnGump(int mx, int my) override;
 
 	bool GetLocationOfItem(uint16 itemid, int32 &gx, int32 &gy,
 	                       int32 lerp_factor = 256) override;
@@ -80,6 +84,17 @@ private:
 		DROP_INTO_CONTAINER // put into the container in the target cell
 	};
 
+	static bool isLeftPanel(const Gump *g);
+	static bool isVisibleLeftPanel(const Gump *g);
+
+	//! Close the panel through the container's use event, like
+	//! double clicking the original gumps, so that game scripts can
+	//! e.g. close the lid of a chest.
+	void requestClose();
+
+	//! Get the hidden panel of the nearest outer container, if any
+	GridContainerGump *getParentPanel() const;
+
 	DropAction getDropAction(Item *item, int32 mx, int32 my, int &col, int &row, Item *&target);
 	void getItemPaintPosition(Item *item, int col, int row, int32 &itemx, int32 &itemy) const;
 	void updateLayout();
@@ -90,6 +105,8 @@ private:
 
 	int32 _cellSize;
 	int _dragCol, _dragRow;
+	bool _closeRequested;
+	int _closeWait;
 
 	RenderedText *_quantityText[GRID_ROWS * GRID_COLUMNS];
 	uint16 _quantityVal[GRID_ROWS * GRID_COLUMNS];

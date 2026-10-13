@@ -43,14 +43,18 @@ DEFINE_RUNTIME_CLASSTYPE_CODE(GridContainerGump)
 
 static const int32 PANEL_MARGIN = 4;
 static const int QUANTITY_FONT = 7;
+// Distance at which panels of containers in the world close
+static const int32 CLOSE_RANGE = 256;
+// Ticks to wait for a game script to close the panel
+static const int CLOSE_TIMEOUT = 30;
 
 GridContainerGump::GridContainerGump() : ContainerGump(), _cellSize(0),
-	_dragCol(0), _dragRow(0), _quantityText(), _quantityVal() {
+	_dragCol(0), _dragRow(0), _closeRequested(false), _closeWait(0), _quantityText(), _quantityVal() {
 }
 
 GridContainerGump::GridContainerGump(uint16 owner, uint32 flags, int32 layer)
 	: ContainerGump(nullptr, 0, owner, flags, layer), _cellSize(0),
-	  _dragCol(0), _dragRow(0), _quantityText(), _quantityVal() {
+	  _dragCol(0), _dragRow(0), _closeRequested(false), _closeWait(0), _quantityText(), _quantityVal() {
 }
 
 GridContainerGump::~GridContainerGump() {
@@ -58,17 +62,37 @@ GridContainerGump::~GridContainerGump() {
 		delete _quantityText[i];
 }
 
-static bool isOpenLeftPanel(const Gump *g) {
+bool GridContainerGump::isLeftPanel(const Gump *g) {
 	const GridContainerGump *grid = dynamic_cast<const GridContainerGump *>(g);
-	return grid && !grid->IsClosing() && !grid->isRightPanel();
+	return grid && !grid->IsClosing() && !grid->_closeRequested && !grid->isRightPanel();
+}
+
+bool GridContainerGump::isVisibleLeftPanel(const Gump *g) {
+	return isLeftPanel(g) && !g->IsHidden();
+}
+
+static bool isInsideContainer(const Container *c, ObjId outer) {
+	for (const Container *p = c->getParentAsContainer(); p; p = p->getParentAsContainer()) {
+		if (p->getObjId() == outer)
+			return true;
+	}
+	return false;
 }
 
 void GridContainerGump::InitGump(Gump *newparent, bool take_focus) {
-	// Only one container is shown on the left side at a time
+	// Only one container is shown on the left side at a time. A container
+	// opened from within the shown one hides it until closed again.
 	if (!isRightPanel()) {
-		Gump *other = Ultima8Engine::get_instance()->getDesktopGump()->FindGump(&isOpenLeftPanel);
-		if (other)
-			other->Close();
+		Gump *desktop = Ultima8Engine::get_instance()->getDesktopGump();
+		GridContainerGump *other = dynamic_cast<GridContainerGump *>(desktop->FindGump(&isVisibleLeftPanel));
+		Container *c = getContainer(_owner);
+		if (other && c && isInsideContainer(c, other->_owner)) {
+			other->HideGump();
+		} else {
+			// Close the shown panel and all hidden ones behind it
+			while ((other = dynamic_cast<GridContainerGump *>(desktop->FindGump(&isLeftPanel))) != nullptr)
+				other->requestClose();
+		}
 	}
 
 	// Skip the ContainerGump and ItemRelativeGump init, as we don't
@@ -82,6 +106,14 @@ void GridContainerGump::InitGump(Gump *newparent, bool take_focus) {
 	for (auto *item : c->_contents) {
 		item->enterFastArea();
 	}
+}
+
+void GridContainerGump::Close(bool no_del) {
+	GridContainerGump *parentPanel = getParentPanel();
+	if (parentPanel)
+		parentPanel->UnhideGump();
+
+	ContainerGump::Close(no_del);
 }
 
 bool GridContainerGump::isRightPanel() const {
@@ -124,7 +156,51 @@ void GridContainerGump::run() {
 		return;
 	}
 
+	if (_closeRequested) {
+		if (++_closeWait > CLOSE_TIMEOUT)
+			Close();
+		return;
+	}
+
+	// Unlike the original gumps the panel doesn't follow the container,
+	// so close it once the avatar walks away.
+	MainActor *avatar = getMainActor();
+	if (avatar && !isRightPanel()) {
+		Point3 pt1 = avatar->getLocationAbsolute();
+		Point3 pt2 = c->getTopItem()->getLocationAbsolute();
+		if (ABS(pt1.x - pt2.x) > CLOSE_RANGE || ABS(pt1.y - pt2.y) > CLOSE_RANGE) {
+			requestClose();
+			return;
+		}
+	}
+
 	assignCells();
+}
+
+void GridContainerGump::requestClose() {
+	if (_closeRequested)
+		return;
+
+	_closeRequested = true;
+	_closeWait = 0;
+
+	Item *item = getItem(_owner);
+	if (item)
+		item->use();
+	else
+		Close();
+}
+
+GridContainerGump *GridContainerGump::getParentPanel() const {
+	Container *c = getContainer(_owner);
+	if (!c || isRightPanel()) return nullptr;
+
+	for (Container *p = c->getParentAsContainer(); p; p = p->getParentAsContainer()) {
+		GridContainerGump *panel = dynamic_cast<GridContainerGump *>(getGump(p->getGump()));
+		if (panel && !panel->isRightPanel() && panel->IsHidden())
+			return panel;
+	}
+	return nullptr;
 }
 
 void GridContainerGump::assignCells() {
@@ -183,6 +259,16 @@ Item *GridContainerGump::getItemInCell(int col, int row) const {
 			return item;
 	}
 	return nullptr;
+}
+
+void GridContainerGump::Paint(RenderSurface *surf, int32 lerp_factor, bool scaled) {
+	// Not shown while waiting to be closed
+	if (!_closeRequested)
+		ContainerGump::Paint(surf, lerp_factor, scaled);
+}
+
+bool GridContainerGump::PointOnGump(int mx, int my) {
+	return !_closeRequested && ContainerGump::PointOnGump(mx, my);
 }
 
 void GridContainerGump::PaintThis(RenderSurface *surf, int32 lerp_factor, bool scaled) {
@@ -316,7 +402,7 @@ Gump *GridContainerGump::onMouseDown(int button, int32 mx, int32 my) {
 
 void GridContainerGump::onMouseClick(int button, int32 mx, int32 my) {
 	if (button == Mouse::BUTTON_RIGHT) {
-		Close();
+		requestClose();
 		return;
 	}
 
