@@ -19,6 +19,8 @@
  *
  */
 
+#include "common/config-manager.h"
+
 #include "ultima/ultima.h"
 #include "ultima/ultima8/ultima8.h"
 #include "ultima/ultima8/usecode/usecode.h"
@@ -43,6 +45,7 @@
 #include "ultima/ultima8/gumps/ask_gump.h"
 #include "ultima/ultima8/world/actors/actor_bark_notify_process.h"
 #include "ultima/ultima8/gumps/paperdoll_gump.h"
+#include "ultima/ultima8/gumps/grid_container_gump.h"
 #include "ultima/ultima8/gumps/game_map_gump.h"
 #include "ultima/ultima8/world/world_point.h"
 #include "ultima/ultima8/world/gravity_process.h"
@@ -1993,13 +1996,16 @@ uint16 Item::openGump(uint32 gumpshape) {
 
 	ContainerGump *cgump;
 
-	if (getObjId() != kMainActorId) {
-		cgump = new ContainerGump(shapeP, 0, _objId, Gump::FLAG_ITEM_DEPENDENT |
-		                          Gump::FLAG_DRAGGABLE);
-	} else {
+	if (getObjId() == kMainActorId) {
 		cgump = new PaperdollGump(shapeP, 0, _objId, Gump::FLAG_ITEM_DEPENDENT |
 		                          Gump::FLAG_DRAGGABLE);
+	} else if (GAME_IS_U8 && ConfMan.getBool("grid_inventory")) {
+		cgump = new GridContainerGump(_objId, Gump::FLAG_ITEM_DEPENDENT);
+	} else {
+		cgump = new ContainerGump(shapeP, 0, _objId, Gump::FLAG_ITEM_DEPENDENT |
+		                          Gump::FLAG_DRAGGABLE);
 	}
+
 	//!!TODO: clean up the way this is set
 	//!! having the itemarea associated with the shapeP through the
 	//!! GumpShapeFlex maybe

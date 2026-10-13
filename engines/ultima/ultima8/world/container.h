@@ -36,6 +36,7 @@ class Container : public Item {
 	friend class ItemFactory;
 	friend class ContainerGump;
 	friend class PaperdollGump;
+	friend class GridContainerGump;
 public:
 	Container();
 	~Container() override;

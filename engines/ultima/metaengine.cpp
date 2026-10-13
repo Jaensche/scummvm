@@ -172,6 +172,17 @@ static const ADExtraGuiOptionsMap optionsList[] = {
 			0
 		}
 	},
+	{
+		GAMEOPTION_GRID_INVENTORY,
+		{
+			_s("Enable grid inventory"),
+			_s("Show containers as fixed panels with a grid of item slots."),
+			"grid_inventory",
+			false,
+			0,
+			0
+		}
+	},
 	AD_EXTRA_GUI_OPTIONS_TERMINATOR
 };
 

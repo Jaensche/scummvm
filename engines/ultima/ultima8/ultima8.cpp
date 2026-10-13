@@ -585,6 +585,7 @@ Common::Error Ultima8Engine::startupGame() {
 	// Position interpolation looks nice on U8, but causes Crusader to look janky.
 	ConfMan.registerDefault("interpolate", _gameInfo->_type == GameInfo::GAME_U8);
 	ConfMan.registerDefault("cheat", false);
+	ConfMan.registerDefault("grid_inventory", false);
 
 	bool loaded = _game->loadFiles();
 	if (!loaded)
