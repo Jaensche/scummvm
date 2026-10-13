@@ -28,6 +28,8 @@
 namespace Ultima {
 namespace Ultima8 {
 
+class RenderedText;
+
 /**
  * Container gump shown as a fixed full-height panel with a grid of cells.
  * The avatar's backpack is shown on the right side of the screen, any other
@@ -58,6 +60,10 @@ public:
 	bool StartDraggingItem(Item *item, int mx, int my) override;
 	bool DraggingItem(Item *item, int mx, int my) override;
 
+	Gump *onMouseDown(int button, int32 mx, int32 my) override;
+	void onMouseClick(int button, int32 mx, int32 my) override;
+	void onMouseDouble(int button, int32 mx, int32 my) override;
+
 	//! Is this the avatar's backpack, shown on the right side?
 	bool isRightPanel() const;
 
@@ -69,8 +75,12 @@ private:
 	void assignCells();
 	Common::Rect32 getCellRect(int col, int row) const;
 	Item *getItemInCell(int col, int row) const;
+	void paintQuantity(RenderSurface *surf, Item *item, const Common::Rect32 &cell, int col, int row);
 
 	int32 _cellSize;
+
+	RenderedText *_quantityText[GRID_ROWS * GRID_COLUMNS];
+	uint16 _quantityVal[GRID_ROWS * GRID_COLUMNS];
 };
 
 } // End of namespace Ultima8

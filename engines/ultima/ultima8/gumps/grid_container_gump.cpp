@@ -25,8 +25,12 @@
 #include "ultima/ultima8/gfx/shape_frame.h"
 #include "ultima/ultima8/gfx/render_surface.h"
 #include "ultima/ultima8/gfx/texture.h"
+#include "ultima/ultima8/gfx/fonts/font.h"
+#include "ultima/ultima8/gfx/fonts/font_manager.h"
+#include "ultima/ultima8/gfx/fonts/rendered_text.h"
 #include "ultima/ultima8/ultima8.h"
 #include "ultima/ultima8/kernel/kernel.h"
+#include "ultima/ultima8/kernel/mouse.h"
 #include "ultima/ultima8/world/container.h"
 #include "ultima/ultima8/world/actors/main_actor.h"
 #include "ultima/ultima8/world/get_object.h"
@@ -37,15 +41,20 @@ namespace Ultima8 {
 DEFINE_RUNTIME_CLASSTYPE_CODE(GridContainerGump)
 
 static const int32 PANEL_MARGIN = 4;
+static const int QUANTITY_FONT = 7;
 
-GridContainerGump::GridContainerGump() : ContainerGump(), _cellSize(0) {
+GridContainerGump::GridContainerGump() : ContainerGump(), _cellSize(0),
+	_quantityText(), _quantityVal() {
 }
 
 GridContainerGump::GridContainerGump(uint16 owner, uint32 flags, int32 layer)
-	: ContainerGump(nullptr, 0, owner, flags, layer), _cellSize(0) {
+	: ContainerGump(nullptr, 0, owner, flags, layer), _cellSize(0),
+	  _quantityText(), _quantityVal() {
 }
 
 GridContainerGump::~GridContainerGump() {
+	for (int i = 0; i < GRID_ROWS * GRID_COLUMNS; i++)
+		delete _quantityText[i];
 }
 
 static bool isOpenLeftPanel(const Gump *g) {
@@ -223,7 +232,29 @@ void GridContainerGump::PaintThis(RenderSurface *surf, int32 lerp_factor, bool s
 		surf->setClippingRect(clip);
 		surf->Paint(s, item->getFrame(), itemx, itemy);
 		surf->setClippingRect(oldClip);
+
+		paintQuantity(surf, item, cell, col, row);
 	}
+}
+
+void GridContainerGump::paintQuantity(RenderSurface *surf, Item *item, const Common::Rect32 &cell, int col, int row) {
+	if (!item->getShapeInfo()->hasQuantity() || item->getQuality() <= 1)
+		return;
+
+	int index = row * GRID_COLUMNS + col;
+	uint16 quantity = item->getQuality();
+
+	if (!_quantityText[index] || _quantityVal[index] != quantity) {
+		delete _quantityText[index];
+		Font *font = FontManager::get_instance()->getGameFont(QUANTITY_FONT);
+		unsigned int remaining;
+		_quantityText[index] = font->renderText(Common::String::format("%u", quantity), remaining);
+		_quantityVal[index] = quantity;
+	}
+
+	int32 w, h;
+	_quantityText[index]->getSize(w, h);
+	_quantityText[index]->draw(surf, cell.right - w - 1, cell.bottom - h - 1);
 }
 
 uint16 GridContainerGump::TraceObjId(int32 mx, int32 my) {
@@ -256,6 +287,35 @@ bool GridContainerGump::GetLocationOfItem(uint16 itemid, int32 &gx, int32 &gy,
 	gx = cell.left + cell.width() / 2;
 	gy = cell.top + cell.height() / 2;
 	return true;
+}
+
+Gump *GridContainerGump::onMouseDown(int button, int32 mx, int32 my) {
+	Gump *handled = Gump::onMouseDown(button, mx, my);
+	if (handled) return handled;
+
+	// Keep clicks from reaching the game world behind the panel
+	if (button == Mouse::BUTTON_LEFT || button == Mouse::BUTTON_RIGHT)
+		return this;
+
+	return nullptr;
+}
+
+void GridContainerGump::onMouseClick(int button, int32 mx, int32 my) {
+	if (button == Mouse::BUTTON_RIGHT) {
+		Close();
+		return;
+	}
+
+	ContainerGump::onMouseClick(button, mx, my);
+}
+
+void GridContainerGump::onMouseDouble(int button, int32 mx, int32 my) {
+	// Unlike the original gumps, double clicking an empty cell does not
+	// use (and thereby close) the container.
+	if (TraceObjId(mx, my) == getObjId())
+		return;
+
+	ContainerGump::onMouseDouble(button, mx, my);
 }
 
 // TODO: Dragging items in and out of the grid is not supported yet

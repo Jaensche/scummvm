@@ -930,8 +930,13 @@ void Ultima8Engine::handleActionDown(KeybindingAction action) {
 		if (!isAvatarInStasis()) {
 			MainActor *av = getMainActor();
 			Item *backpack = getItem(av->getEquip(ShapeInfo::SE_BACKPACK));
-			if (backpack)
-				backpack->callUsecodeEvent_use();
+			if (backpack) {
+				// The grid inventory panel is toggled by the key
+				if (backpack->getGump() && ConfMan.getBool("grid_inventory"))
+					backpack->closeGump();
+				else
+					backpack->callUsecodeEvent_use();
+			}
 		}
 		break;
 	case ACTION_KEYRING:
