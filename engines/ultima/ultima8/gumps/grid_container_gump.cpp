@@ -19,15 +19,18 @@
  *
  */
 
+#include "graphics/font.h"
+#include "graphics/fontman.h"
+
 #include "ultima/ultima8/gumps/grid_container_gump.h"
 
 #include "ultima/ultima8/gfx/shape.h"
 #include "ultima/ultima8/gfx/shape_frame.h"
 #include "ultima/ultima8/gfx/render_surface.h"
 #include "ultima/ultima8/gfx/texture.h"
-#include "ultima/ultima8/gfx/fonts/font.h"
+#include "ultima/ultima8/gfx/palette.h"
 #include "ultima/ultima8/gfx/fonts/font_manager.h"
-#include "ultima/ultima8/gfx/fonts/rendered_text.h"
+#include "ultima/ultima8/gfx/fonts/shape_font.h"
 #include "ultima/ultima8/ultima8.h"
 #include "ultima/ultima8/kernel/kernel.h"
 #include "ultima/ultima8/kernel/mouse.h"
@@ -42,24 +45,25 @@ namespace Ultima8 {
 DEFINE_RUNTIME_CLASSTYPE_CODE(GridContainerGump)
 
 static const int32 PANEL_MARGIN = 4;
-static const int QUANTITY_FONT = 7;
+// Game font with small white digits, drawn with extra spacing
+static const int QUANTITY_FONT = 3;
 // Distance at which panels of containers in the world close
 static const int32 CLOSE_RANGE = 256;
 // Ticks to wait for a game script to close the panel
 static const int CLOSE_TIMEOUT = 30;
 
 GridContainerGump::GridContainerGump() : ContainerGump(), _cellSize(0),
-	_dragCol(0), _dragRow(0), _closeRequested(false), _closeWait(0), _quantityText(), _quantityVal() {
+	_page(0), _numPages(1), _dragPageFlipped(false),
+	_dragCol(0), _dragRow(0), _closeRequested(false), _closeWait(0) {
 }
 
 GridContainerGump::GridContainerGump(uint16 owner, uint32 flags, int32 layer)
 	: ContainerGump(nullptr, 0, owner, flags, layer), _cellSize(0),
-	  _dragCol(0), _dragRow(0), _closeRequested(false), _closeWait(0), _quantityText(), _quantityVal() {
+	  _page(0), _numPages(1), _dragPageFlipped(false),
+	  _dragCol(0), _dragRow(0), _closeRequested(false), _closeWait(0) {
 }
 
 GridContainerGump::~GridContainerGump() {
-	for (int i = 0; i < GRID_ROWS * GRID_COLUMNS; i++)
-		delete _quantityText[i];
 }
 
 bool GridContainerGump::isLeftPanel(const Gump *g) {
@@ -129,12 +133,17 @@ void GridContainerGump::updateLayout() {
 	int32 width = screen.width() / 3;
 	int32 height = screen.height();
 
+	// Leave room for a footer of one cell for the page controls
 	_cellSize = MIN((width - 2 * PANEL_MARGIN) / GRID_COLUMNS,
-	                (height - 2 * PANEL_MARGIN) / GRID_ROWS);
+	                (height - 2 * PANEL_MARGIN) / (GRID_ROWS + 1));
+	int32 footerHeight = _cellSize;
 
 	_dims = Common::Rect32(width, height);
 	_itemArea = Common::Rect32(GRID_COLUMNS * _cellSize, GRID_ROWS * _cellSize);
-	_itemArea.moveTo((width - _itemArea.width()) / 2, (height - _itemArea.height()) / 2);
+	_itemArea.moveTo((width - _itemArea.width()) / 2,
+	                 (height - _itemArea.height() - footerHeight) / 2);
+	_footerArea = Common::Rect32(_itemArea.left, _itemArea.bottom,
+	                             _itemArea.right, _itemArea.bottom + footerHeight);
 
 	_x = isRightPanel() ? screen.width() - width : 0;
 	_y = 0;
@@ -208,8 +217,10 @@ void GridContainerGump::assignCells() {
 	if (!c) return;
 
 	bool showEditorItems = Ultima8Engine::get_instance()->isShowEditorItems();
-	bool used[GRID_ROWS][GRID_COLUMNS] = {};
+	const int totalRows = MAX_PAGES * GRID_ROWS;
+	bool used[totalRows][GRID_COLUMNS] = {};
 	Common::Array<Item *> unplaced;
+	int lastRow = 0;
 
 	for (auto *item : c->_contents) {
 		if (!showEditorItems && item->getShapeInfo()->is_editor())
@@ -217,29 +228,74 @@ void GridContainerGump::assignCells() {
 
 		int32 col, row;
 		item->getGumpLocation(col, row);
-		if (col < GRID_COLUMNS && row < GRID_ROWS && !used[row][col])
+		if (col < GRID_COLUMNS && row < totalRows && !used[row][col]) {
 			used[row][col] = true;
-		else
+			lastRow = MAX(lastRow, row);
+		} else {
 			unplaced.push_back(item);
+		}
 	}
 
 	// Items without a valid cell get the first free one.
-	// TODO: Items that don't fit are not shown yet.
+	// Items that don't fit on any page are not shown.
 	int cell = 0;
 	for (auto *item : unplaced) {
-		while (cell < GRID_ROWS * GRID_COLUMNS && used[cell / GRID_COLUMNS][cell % GRID_COLUMNS])
+		while (cell < totalRows * GRID_COLUMNS && used[cell / GRID_COLUMNS][cell % GRID_COLUMNS])
 			cell++;
-		if (cell == GRID_ROWS * GRID_COLUMNS)
+		if (cell == totalRows * GRID_COLUMNS)
 			break;
 
 		item->setGumpLocation(cell % GRID_COLUMNS, cell / GRID_COLUMNS);
 		used[cell / GRID_COLUMNS][cell % GRID_COLUMNS] = true;
+		lastRow = MAX(lastRow, cell / GRID_COLUMNS);
 	}
+
+	// Show the pages in use, plus an empty one if they are all full
+	_numPages = lastRow / GRID_ROWS + 1;
+	if (_numPages < MAX_PAGES) {
+		bool full = true;
+		for (int row = (_numPages - 1) * GRID_ROWS; row < _numPages * GRID_ROWS && full; row++) {
+			for (int col = 0; col < GRID_COLUMNS && full; col++)
+				full = used[row][col];
+		}
+		if (full)
+			_numPages++;
+	}
+	_page = MIN(_page, _numPages - 1);
+}
+
+bool GridContainerGump::isRowOnPage(int row) const {
+	return row / GRID_ROWS == _page;
+}
+
+bool GridContainerGump::getCellAt(int32 mx, int32 my, int &col, int &row) const {
+	if (_cellSize <= 0 || !_itemArea.contains(mx, my))
+		return false;
+
+	col = (mx - _itemArea.left) / _cellSize;
+	row = _page * GRID_ROWS + (my - _itemArea.top) / _cellSize;
+	return true;
+}
+
+int GridContainerGump::getPageArrowAt(int32 mx, int32 my) const {
+	if (_numPages <= 1 || !_footerArea.contains(mx, my))
+		return 0;
+
+	int32 third = _footerArea.width() / 3;
+	if (mx < _footerArea.left + third && _page > 0)
+		return -1;
+	if (mx >= _footerArea.right - third && _page < _numPages - 1)
+		return 1;
+	return 0;
+}
+
+void GridContainerGump::changePage(int delta) {
+	_page = CLIP(_page + delta, 0, _numPages - 1);
 }
 
 Common::Rect32 GridContainerGump::getCellRect(int col, int row) const {
 	Common::Rect32 r(_cellSize, _cellSize);
-	r.moveTo(_itemArea.left + col * _cellSize, _itemArea.top + row * _cellSize);
+	r.moveTo(_itemArea.left + col * _cellSize, _itemArea.top + (row % GRID_ROWS) * _cellSize);
 	return r;
 }
 
@@ -289,7 +345,7 @@ void GridContainerGump::PaintThis(RenderSurface *surf, int32 lerp_factor, bool s
 		}
 	}
 
-	if (_displayDragging) {
+	if (_displayDragging && isRowOnPage(_dragRow)) {
 		Common::Rect32 cell = getCellRect(_dragCol, _dragRow);
 		cell.grow(-1);
 		surf->fillBlended(TEX32_PACK_RGBA(120, 255, 120, 80), cell);
@@ -307,21 +363,110 @@ void GridContainerGump::PaintThis(RenderSurface *surf, int32 lerp_factor, bool s
 
 		int32 col, row;
 		item->getGumpLocation(col, row);
-		if (col >= GRID_COLUMNS || row >= GRID_ROWS)
+		if (col >= GRID_COLUMNS || !isRowOnPage(row))
 			continue;
 
-		int32 itemx, itemy;
-		getItemPaintPosition(item, col, row, itemx, itemy);
-
-		// Cut off anything too large for the cell
 		Common::Rect32 cell = getCellRect(col, row);
 		Common::Rect32 clip = cell;
 		clip.clip(oldClip);
 		surf->setClippingRect(clip);
-		surf->Paint(item->getShapeObject(), item->getFrame(), itemx, itemy);
+		paintItem(surf, item, cell);
 		surf->setClippingRect(oldClip);
 
-		paintQuantity(surf, item, cell, col, row);
+		paintQuantity(surf, item, cell);
+	}
+
+	paintFooter(surf);
+}
+
+void GridContainerGump::paintItem(RenderSurface *surf, Item *item, const Common::Rect32 &cell) {
+	const Shape *s = item->getShapeObject();
+	assert(s);
+	const ShapeFrame *fr = s->getFrame(item->getFrame());
+	assert(fr);
+
+	int32 maxSize = cell.width() - 2;
+	if (fr->_width <= maxSize && fr->_height <= maxSize) {
+		int32 col, row, itemx, itemy;
+		item->getGumpLocation(col, row);
+		getItemPaintPosition(item, col, row, itemx, itemy);
+		surf->Paint(s, item->getFrame(), itemx, itemy);
+		return;
+	}
+
+	// Shrink frames too large for the cell, keeping the aspect ratio
+	int32 largest = MAX<int32>(fr->_width, fr->_height);
+	int32 w = MAX<int32>(1, fr->_width * maxSize / largest);
+	int32 h = MAX<int32>(1, fr->_height * maxSize / largest);
+	Common::Rect32 dest(w, h);
+	dest.moveTo(cell.left + (cell.width() - w) / 2, cell.top + (cell.height() - h) / 2);
+	paintScaled(surf, s, item->getFrame(), dest);
+}
+
+void GridContainerGump::paintScaled(RenderSurface *surf, const Shape *s, uint32 frameNum, const Common::Rect32 &dest) {
+	const ShapeFrame *fr = s->getFrame(frameNum);
+	const Palette *pal = s->getPalette();
+	if (!fr || !pal)
+		return;
+
+	const Graphics::Surface &src = fr->getSurface();
+	Graphics::ManagedSurface *raw = surf->getRawSurface();
+	const Graphics::PixelFormat &format = raw->format;
+	Common::Rect32 clip = surf->getClippingRect();
+	int32 ox, oy;
+	surf->GetOrigin(ox, oy);
+
+	// Each destination pixel gets the average color of the source pixels it
+	// covers, blended by the share of those that aren't transparent.
+	for (int32 dy = 0; dy < dest.height(); dy++) {
+		int32 sy0 = dy * src.h / dest.height();
+		int32 sy1 = MAX(sy0 + 1, (dy + 1) * src.h / dest.height());
+
+		for (int32 dx = 0; dx < dest.width(); dx++) {
+			int32 px = dest.left + dx;
+			int32 py = dest.top + dy;
+			if (!clip.contains(px, py))
+				continue;
+
+			int32 sx0 = dx * src.w / dest.width();
+			int32 sx1 = MAX(sx0 + 1, (dx + 1) * src.w / dest.width());
+
+			uint32 r = 0, g = 0, b = 0, opaque = 0, total = 0;
+			for (int32 sy = sy0; sy < sy1; sy++) {
+				const uint8 *line = static_cast<const uint8 *>(src.getBasePtr(0, sy));
+				for (int32 sx = sx0; sx < sx1; sx++) {
+					total++;
+					if (line[sx] == fr->_keycolor)
+						continue;
+
+					uint8 cr, cg, cb;
+					format.colorToRGB(pal->_native[line[sx]], cr, cg, cb);
+					r += cr;
+					g += cg;
+					b += cb;
+					opaque++;
+				}
+			}
+			if (!opaque)
+				continue;
+
+			byte *ptr = static_cast<byte *>(raw->getBasePtr(ox + px, oy + py));
+			uint32 dstColor = (format.bytesPerPixel == 4) ? *reinterpret_cast<uint32 *>(ptr)
+			                                              : *reinterpret_cast<uint16 *>(ptr);
+			uint8 dr, dg, db;
+			format.colorToRGB(dstColor, dr, dg, db);
+
+			uint32 alpha = opaque * 256 / total;
+			uint32 color = format.RGBToColor(
+				(r / opaque * alpha + dr * (256 - alpha)) >> 8,
+				(g / opaque * alpha + dg * (256 - alpha)) >> 8,
+				(b / opaque * alpha + db * (256 - alpha)) >> 8);
+
+			if (format.bytesPerPixel == 4)
+				*reinterpret_cast<uint32 *>(ptr) = color;
+			else
+				*reinterpret_cast<uint16 *>(ptr) = color;
+		}
 	}
 }
 
@@ -337,24 +482,80 @@ void GridContainerGump::getItemPaintPosition(Item *item, int col, int row, int32
 	itemy = cell.top + (cell.height() - fr->_height) / 2 + fr->_yoff;
 }
 
-void GridContainerGump::paintQuantity(RenderSurface *surf, Item *item, const Common::Rect32 &cell, int col, int row) {
+void GridContainerGump::paintText(RenderSurface *surf, const Common::String &text, int32 x, int32 y) {
+	const Graphics::Font *font = FontMan.getFontByUsage(Graphics::FontManager::kConsoleFont);
+	Graphics::ManagedSurface *raw = surf->getRawSurface();
+	int32 ox, oy;
+	surf->GetOrigin(ox, oy);
+
+	font->drawString(raw, text, ox + x, oy + y, font->getStringWidth(text),
+	                 raw->format.RGBToColor(255, 255, 255));
+}
+
+void GridContainerGump::paintQuantity(RenderSurface *surf, Item *item, const Common::Rect32 &cell) {
 	if (!item->getShapeInfo()->hasQuantity() || item->getQuality() <= 1)
 		return;
 
-	int index = row * GRID_COLUMNS + col;
-	uint16 quantity = item->getQuality();
+	Common::String text = Common::String::format("%u", item->getQuality());
+	ShapeFont *font = dynamic_cast<ShapeFont *>(FontManager::get_instance()->getGameFont(QUANTITY_FONT));
+	if (!font)
+		return;
 
-	if (!_quantityText[index] || _quantityVal[index] != quantity) {
-		delete _quantityText[index];
-		Font *font = FontManager::get_instance()->getGameFont(QUANTITY_FONT);
-		unsigned int remaining;
-		_quantityText[index] = font->renderText(Common::String::format("%u", quantity), remaining);
-		_quantityVal[index] = quantity;
+	int32 w = -1, h = 0;
+	for (char c : text) {
+		const ShapeFrame *fr = font->getFrame(static_cast<uint8>(c));
+		w += fr->_width + 1;
+		h = MAX<int32>(h, fr->_height);
 	}
 
-	int32 w, h;
-	_quantityText[index]->getSize(w, h);
-	_quantityText[index]->draw(surf, cell.right - w - 1, cell.bottom - h - 1);
+	int32 x = cell.right - w - 2;
+	int32 y = cell.bottom - h - 2;
+
+	// Darken the background to keep the number readable on any item
+	surf->fillBlended(TEX32_PACK_RGBA(0, 0, 0, 160), Common::Rect32(x - 1, y - 1, x + w + 1, y + h + 1));
+
+	// The font has no spacing between digits, so draw them one by one
+	for (char c : text) {
+		const ShapeFrame *fr = font->getFrame(static_cast<uint8>(c));
+		surf->Paint(font, static_cast<uint8>(c), x + fr->_xoff, y + fr->_yoff);
+		x += fr->_width + 1;
+	}
+}
+
+void GridContainerGump::paintFooter(RenderSurface *surf) {
+	if (_numPages <= 1)
+		return;
+
+	const Graphics::Font *font = FontMan.getFontByUsage(Graphics::FontManager::kConsoleFont);
+	Common::String text = Common::String::format("%d of %d", _page + 1, _numPages);
+	int32 w = font->getStringWidth(text);
+	int32 h = font->getFontHeight();
+	paintText(surf, text, _footerArea.left + (_footerArea.width() - w) / 2,
+	          _footerArea.top + (_footerArea.height() - h) / 2);
+
+	// Buttons with arrows to the previous and next page
+	int32 size = _footerArea.height();
+	int32 arrowSize = size / 3;
+	int32 cy = _footerArea.top + size / 2;
+	const uint32 color = TEX32_PACK_RGB(255, 240, 200);
+
+	if (_page > 0) {
+		Common::Rect32 button(_footerArea.left, _footerArea.top, _footerArea.left + size, _footerArea.bottom);
+		button.grow(-1);
+		surf->fillBlended(TEX32_PACK_RGBA(255, 240, 200, 48), button);
+		int32 tip = button.left + (button.width() - arrowSize) / 2;
+		for (int32 i = 0; i < arrowSize; i++)
+			surf->fill32(color, tip + i, cy - i, 1, 2 * i + 1);
+	}
+
+	if (_page < _numPages - 1) {
+		Common::Rect32 button(_footerArea.right - size, _footerArea.top, _footerArea.right, _footerArea.bottom);
+		button.grow(-1);
+		surf->fillBlended(TEX32_PACK_RGBA(255, 240, 200, 48), button);
+		int32 tip = button.right - 1 - (button.width() - arrowSize) / 2;
+		for (int32 i = 0; i < arrowSize; i++)
+			surf->fill32(color, tip - i, cy - i, 1, 2 * i + 1);
+	}
 }
 
 uint16 GridContainerGump::TraceObjId(int32 mx, int32 my) {
@@ -363,9 +564,8 @@ uint16 GridContainerGump::TraceObjId(int32 mx, int32 my) {
 
 	ParentToGump(mx, my);
 
-	if (_cellSize > 0 && _itemArea.contains(mx, my)) {
-		int col = (mx - _itemArea.left) / _cellSize;
-		int row = (my - _itemArea.top) / _cellSize;
+	int col, row;
+	if (getCellAt(mx, my, col, row)) {
 		Item *item = getItemInCell(col, row);
 		if (item)
 			return item->getObjId();
@@ -381,7 +581,7 @@ bool GridContainerGump::GetLocationOfItem(uint16 itemid, int32 &gx, int32 &gy,
 
 	int32 col, row;
 	item->getGumpLocation(col, row);
-	if (col >= GRID_COLUMNS || row >= GRID_ROWS) return false;
+	if (col >= GRID_COLUMNS || !isRowOnPage(row)) return false;
 
 	Common::Rect32 cell = getCellRect(col, row);
 	gx = cell.left + cell.width() / 2;
@@ -406,14 +606,28 @@ void GridContainerGump::onMouseClick(int button, int32 mx, int32 my) {
 		return;
 	}
 
+	int32 gx = mx, gy = my;
+	ParentToGump(gx, gy);
+	int arrow = getPageArrowAt(gx, gy);
+	if (button == Mouse::BUTTON_LEFT && arrow) {
+		changePage(arrow);
+		return;
+	}
+
 	ContainerGump::onMouseClick(button, mx, my);
 }
 
 void GridContainerGump::onMouseDouble(int button, int32 mx, int32 my) {
 	// Unlike the original gumps, double clicking an empty cell does not
 	// use (and thereby close) the container.
-	if (TraceObjId(mx, my) == getObjId())
+	if (TraceObjId(mx, my) == getObjId()) {
+		int32 gx = mx, gy = my;
+		ParentToGump(gx, gy);
+		int arrow = getPageArrowAt(gx, gy);
+		if (button == Mouse::BUTTON_LEFT && arrow)
+			changePage(arrow);
 		return;
+	}
 
 	ContainerGump::onMouseDouble(button, mx, my);
 }
@@ -423,11 +637,9 @@ GridContainerGump::DropAction GridContainerGump::getDropAction(Item *item, int32
 	target = nullptr;
 
 	Container *c = getContainer(_owner);
-	if (!c || _cellSize <= 0 || !_itemArea.contains(mx, my))
+	if (!c || !getCellAt(mx, my, col, row))
 		return DROP_NONE;
 
-	col = (mx - _itemArea.left) / _cellSize;
-	row = (my - _itemArea.top) / _cellSize;
 	target = getItemInCell(col, row);
 
 	if (!target || target == item)
@@ -472,6 +684,16 @@ bool GridContainerGump::DraggingItem(Item *item, int mx, int my) {
 	MainActor *avatar = getMainActor();
 	if (!avatar->canReach(c, 128)) return false;
 
+	// Holding an item over a page arrow flips the page once
+	int arrow = getPageArrowAt(mx, my);
+	if (arrow) {
+		if (!_dragPageFlipped)
+			changePage(arrow);
+		_dragPageFlipped = true;
+		return false;
+	}
+	_dragPageFlipped = false;
+
 	Item *target;
 	if (getDropAction(item, mx, my, _dragCol, _dragRow, target) == DROP_NONE)
 		return false;
@@ -479,6 +701,11 @@ bool GridContainerGump::DraggingItem(Item *item, int mx, int my) {
 	Mouse::get_instance()->setMouseCursor(Mouse::MOUSE_TARGET);
 	_displayDragging = true;
 	return true;
+}
+
+void GridContainerGump::DraggingItemLeftGump(Item *item) {
+	ContainerGump::DraggingItemLeftGump(item);
+	_dragPageFlipped = false;
 }
 
 void GridContainerGump::DropItem(Item *item, int mx, int my) {

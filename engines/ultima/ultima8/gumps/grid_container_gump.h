@@ -28,8 +28,6 @@
 namespace Ultima {
 namespace Ultima8 {
 
-class RenderedText;
-
 /**
  * Container gump shown as a fixed full-height panel with a grid of cells.
  * The avatar's backpack is shown on the right side of the screen, any other
@@ -41,6 +39,7 @@ public:
 
 	static const int GRID_COLUMNS = 5;
 	static const int GRID_ROWS = 10;
+	static const int MAX_PAGES = 4;
 
 	GridContainerGump();
 	GridContainerGump(uint16 owner, uint32 flags = 0, int32 layer = LAYER_NORMAL);
@@ -63,6 +62,7 @@ public:
 
 	bool StartDraggingItem(Item *item, int mx, int my) override;
 	bool DraggingItem(Item *item, int mx, int my) override;
+	void DraggingItemLeftGump(Item *item) override;
 	void DropItem(Item *item, int mx, int my) override;
 
 	Gump *onMouseDown(int button, int32 mx, int32 my) override;
@@ -99,17 +99,31 @@ private:
 	void getItemPaintPosition(Item *item, int col, int row, int32 &itemx, int32 &itemy) const;
 	void updateLayout();
 	void assignCells();
+
+	// Rows count across all pages, so row / GRID_ROWS is the page of a cell
+	bool isRowOnPage(int row) const;
+	bool getCellAt(int32 mx, int32 my, int &col, int &row) const;
 	Common::Rect32 getCellRect(int col, int row) const;
 	Item *getItemInCell(int col, int row) const;
-	void paintQuantity(RenderSurface *surf, Item *item, const Common::Rect32 &cell, int col, int row);
+
+	//! Get the page arrow (-1 or 1) at the given point, or 0
+	int getPageArrowAt(int32 mx, int32 my) const;
+	void changePage(int delta);
+
+	void paintItem(RenderSurface *surf, Item *item, const Common::Rect32 &cell);
+	void paintScaled(RenderSurface *surf, const Shape *s, uint32 frameNum, const Common::Rect32 &dest);
+	void paintQuantity(RenderSurface *surf, Item *item, const Common::Rect32 &cell);
+	void paintFooter(RenderSurface *surf);
+	void paintText(RenderSurface *surf, const Common::String &text, int32 x, int32 y);
 
 	int32 _cellSize;
+	Common::Rect32 _footerArea;
+	int _page;
+	int _numPages;
+	bool _dragPageFlipped;
 	int _dragCol, _dragRow;
 	bool _closeRequested;
 	int _closeWait;
-
-	RenderedText *_quantityText[GRID_ROWS * GRID_COLUMNS];
-	uint16 _quantityVal[GRID_ROWS * GRID_COLUMNS];
 };
 
 } // End of namespace Ultima8
