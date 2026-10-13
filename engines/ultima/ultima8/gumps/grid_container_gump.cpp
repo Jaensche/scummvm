@@ -33,6 +33,7 @@
 #include "ultima/ultima8/kernel/mouse.h"
 #include "ultima/ultima8/world/container.h"
 #include "ultima/ultima8/world/actors/main_actor.h"
+#include "ultima/ultima8/world/actors/avatar_mover_process.h"
 #include "ultima/ultima8/world/get_object.h"
 
 namespace Ultima {
@@ -44,12 +45,12 @@ static const int32 PANEL_MARGIN = 4;
 static const int QUANTITY_FONT = 7;
 
 GridContainerGump::GridContainerGump() : ContainerGump(), _cellSize(0),
-	_quantityText(), _quantityVal() {
+	_dragCol(0), _dragRow(0), _quantityText(), _quantityVal() {
 }
 
 GridContainerGump::GridContainerGump(uint16 owner, uint32 flags, int32 layer)
 	: ContainerGump(nullptr, 0, owner, flags, layer), _cellSize(0),
-	  _quantityText(), _quantityVal() {
+	  _dragCol(0), _dragRow(0), _quantityText(), _quantityVal() {
 }
 
 GridContainerGump::~GridContainerGump() {
@@ -202,6 +203,12 @@ void GridContainerGump::PaintThis(RenderSurface *surf, int32 lerp_factor, bool s
 		}
 	}
 
+	if (_displayDragging) {
+		Common::Rect32 cell = getCellRect(_dragCol, _dragRow);
+		cell.grow(-1);
+		surf->fillBlended(TEX32_PACK_RGBA(120, 255, 120, 80), cell);
+	}
+
 	int32 gameframeno = Kernel::get_instance()->getFrameNum();
 	bool showEditorItems = Ultima8Engine::get_instance()->isShowEditorItems();
 	Common::Rect32 oldClip = surf->getClippingRect();
@@ -217,24 +224,31 @@ void GridContainerGump::PaintThis(RenderSurface *surf, int32 lerp_factor, bool s
 		if (col >= GRID_COLUMNS || row >= GRID_ROWS)
 			continue;
 
-		const Shape *s = item->getShapeObject();
-		assert(s);
-		const ShapeFrame *fr = s->getFrame(item->getFrame());
-		assert(fr);
+		int32 itemx, itemy;
+		getItemPaintPosition(item, col, row, itemx, itemy);
 
-		// Center the frame in its cell, cutting off anything too large
+		// Cut off anything too large for the cell
 		Common::Rect32 cell = getCellRect(col, row);
-		int32 itemx = cell.left + (cell.width() - fr->_width) / 2 + fr->_xoff;
-		int32 itemy = cell.top + (cell.height() - fr->_height) / 2 + fr->_yoff;
-
 		Common::Rect32 clip = cell;
 		clip.clip(oldClip);
 		surf->setClippingRect(clip);
-		surf->Paint(s, item->getFrame(), itemx, itemy);
+		surf->Paint(item->getShapeObject(), item->getFrame(), itemx, itemy);
 		surf->setClippingRect(oldClip);
 
 		paintQuantity(surf, item, cell, col, row);
 	}
+}
+
+void GridContainerGump::getItemPaintPosition(Item *item, int col, int row, int32 &itemx, int32 &itemy) const {
+	const Shape *s = item->getShapeObject();
+	assert(s);
+	const ShapeFrame *fr = s->getFrame(item->getFrame());
+	assert(fr);
+
+	// Center the frame in the cell
+	Common::Rect32 cell = getCellRect(col, row);
+	itemx = cell.left + (cell.width() - fr->_width) / 2 + fr->_xoff;
+	itemy = cell.top + (cell.height() - fr->_height) / 2 + fr->_yoff;
 }
 
 void GridContainerGump::paintQuantity(RenderSurface *surf, Item *item, const Common::Rect32 &cell, int col, int row) {
@@ -318,13 +332,128 @@ void GridContainerGump::onMouseDouble(int button, int32 mx, int32 my) {
 	ContainerGump::onMouseDouble(button, mx, my);
 }
 
-// TODO: Dragging items in and out of the grid is not supported yet
+GridContainerGump::DropAction GridContainerGump::getDropAction(Item *item, int32 mx, int32 my,
+                                                               int &col, int &row, Item *&target) {
+	target = nullptr;
+
+	Container *c = getContainer(_owner);
+	if (!c || _cellSize <= 0 || !_itemArea.contains(mx, my))
+		return DROP_NONE;
+
+	col = (mx - _itemArea.left) / _cellSize;
+	row = (my - _itemArea.top) / _cellSize;
+	target = getItemInCell(col, row);
+
+	if (!target || target == item)
+		return c->CanAddItem(item, true) ? DROP_PLACE : DROP_NONE;
+
+	if (item->getShapeInfo()->hasQuantity() && item->canMergeWith(target))
+		return DROP_MERGE;
+
+	Container *targetcontainer = dynamic_cast<Container *>(target);
+	if (targetcontainer)
+		return targetcontainer->CanAddItem(item, true) ? DROP_INTO_CONTAINER : DROP_NONE;
+
+	if (item->getParent() == _owner)
+		return DROP_SWAP;
+
+	return c->CanAddItem(item, true) ? DROP_PLACE : DROP_NONE;
+}
+
 bool GridContainerGump::StartDraggingItem(Item *item, int mx, int my) {
-	return false;
+	Container *c = getContainer(_owner);
+	if (!c) return false;
+
+	// check if the container the item is in is in range
+	MainActor *avatar = getMainActor();
+	if (!avatar->canReach(c, 128)) return false;
+
+	int32 col, row, itemx, itemy;
+	item->getGumpLocation(col, row);
+	getItemPaintPosition(item, col, row, itemx, itemy);
+	Mouse::get_instance()->setDraggingOffset(mx - itemx, my - itemy);
+
+	return true;
 }
 
 bool GridContainerGump::DraggingItem(Item *item, int mx, int my) {
-	return false;
+	_displayDragging = false;
+
+	Container *c = getContainer(_owner);
+	if (!c) return false;
+
+	// check if the container is in range
+	MainActor *avatar = getMainActor();
+	if (!avatar->canReach(c, 128)) return false;
+
+	Item *target;
+	if (getDropAction(item, mx, my, _dragCol, _dragRow, target) == DROP_NONE)
+		return false;
+
+	Mouse::get_instance()->setMouseCursor(Mouse::MOUSE_TARGET);
+	_displayDragging = true;
+	return true;
+}
+
+void GridContainerGump::DropItem(Item *item, int mx, int my) {
+	_displayDragging = false;
+
+	int col, row;
+	Item *target;
+	DropAction action = getDropAction(item, mx, my, col, row, target);
+
+	// Holding the run key (shift by default) asks how many items of a
+	// stack to move. The keymapper consumes the key itself, so the
+	// keyboard modifier state can't be used here.
+	AvatarMoverProcess *mover = Ultima8Engine::get_instance()->getAvatarMoverProcess();
+	bool split = mover && mover->hasMovementFlags(AvatarMoverProcess::MOVE_RUN) &&
+	             item->getShapeInfo()->hasQuantity() && item->getQuality() > 1;
+
+	switch (action) {
+	case DROP_NONE:
+		break;
+
+	case DROP_MERGE:
+		if (split)
+			splitItem(item, target);
+		else
+			mergeItems(item, target);
+		break;
+
+	case DROP_INTO_CONTAINER:
+		item->moveToContainer(dynamic_cast<Container *>(target));
+		item->randomGumpLocation();
+		break;
+
+	case DROP_SWAP: {
+		int32 oldcol, oldrow;
+		item->getGumpLocation(oldcol, oldrow);
+		target->setGumpLocation(oldcol, oldrow);
+		item->setGumpLocation(col, row);
+		break;
+	}
+
+	case DROP_PLACE: {
+		Container *c = getContainer(_owner);
+		Item *placed = item;
+
+		if (split && target != item) {
+			placed = createSplitTarget(item);
+			if (!placed)
+				break;
+			placed->moveToContainer(c);
+			splitItem(item, placed);
+		} else if (item->getParent() != _owner) {
+			item->moveToContainer(c);
+		}
+
+		if (target && target != placed)
+			placed->randomGumpLocation();
+		else
+			placed->setGumpLocation(col, row);
+		break;
+	}
+	}
 }
 
 } // End of namespace Ultima8

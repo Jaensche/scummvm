@@ -59,6 +59,7 @@ public:
 
 	bool StartDraggingItem(Item *item, int mx, int my) override;
 	bool DraggingItem(Item *item, int mx, int my) override;
+	void DropItem(Item *item, int mx, int my) override;
 
 	Gump *onMouseDown(int button, int32 mx, int32 my) override;
 	void onMouseClick(int button, int32 mx, int32 my) override;
@@ -71,6 +72,16 @@ protected:
 	void GetItemLocation(int32 lerp_factor) override;
 
 private:
+	enum DropAction {
+		DROP_NONE,
+		DROP_PLACE,         // move to the cell, or the first free one if taken
+		DROP_SWAP,          // swap cells with the item in the target cell
+		DROP_MERGE,         // merge with the stack in the target cell
+		DROP_INTO_CONTAINER // put into the container in the target cell
+	};
+
+	DropAction getDropAction(Item *item, int32 mx, int32 my, int &col, int &row, Item *&target);
+	void getItemPaintPosition(Item *item, int col, int row, int32 &itemx, int32 &itemy) const;
 	void updateLayout();
 	void assignCells();
 	Common::Rect32 getCellRect(int col, int row) const;
@@ -78,6 +89,7 @@ private:
 	void paintQuantity(RenderSurface *surf, Item *item, const Common::Rect32 &cell, int col, int row);
 
 	int32 _cellSize;
+	int _dragCol, _dragRow;
 
 	RenderedText *_quantityText[GRID_ROWS * GRID_COLUMNS];
 	uint16 _quantityVal[GRID_ROWS * GRID_COLUMNS];

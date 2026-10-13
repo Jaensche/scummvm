@@ -493,16 +493,9 @@ void ContainerGump::DropItem(Item *item, int mx, int my) {
 		}
 
 		if (!splittarget) {
-			// create new item
-			splittarget = ItemFactory::createItem(
-			                  item->getShape(), item->getFrame(), 0,
-			                  item->getFlags() & (Item::FLG_DISPOSABLE | Item::FLG_OWNED | Item::FLG_INVISIBLE | Item::FLG_FLIPPED | Item::FLG_FAST_ONLY | Item::FLG_LOW_FRICTION), item->getNpcNum(), item->getMapNum(),
-			                  item->getExtFlags() & (Item::EXT_SPRITE | Item::EXT_HIGHLIGHT | Item::EXT_TRANSPARENT), true);
-			if (!splittarget) {
-				warning("ContainerGump failed to create item (%u,%u) while splitting",
-					item->getShape(), item->getFrame());
+			splittarget = createSplitTarget(item);
+			if (!splittarget)
 				return;
-			}
 
 
 			if (targetcontainer) {
@@ -514,34 +507,14 @@ void ContainerGump::DropItem(Item *item, int mx, int my) {
 			}
 		}
 
-		SliderGump *slidergump = new SliderGump(100, 100,
-		                                        0, item->getQuality(),
-		                                        item->getQuality());
-		slidergump->InitGump(0);
-		slidergump->CreateNotifier(); // manually create notifier
-		Process *notifier = slidergump->GetNotifyProcess();
-		SplitItemProcess *splitproc = new SplitItemProcess(item, splittarget);
-		Kernel::get_instance()->addProcess(splitproc);
-		splitproc->waitFor(notifier);
-
+		splitItem(item, splittarget);
 		return;
 	}
 
 	if (targetitem && item->getShapeInfo()->hasQuantity()) {
 		// try to combine items
 		if (item->canMergeWith(targetitem)) {
-			uint16 newquant = targetitem->getQuality() + item->getQuality();
-			if (newquant > Item::MAX_QUANTITY) {
-				item->setQuality(newquant - Item::MAX_QUANTITY);
-				targetitem->setQuality(Item::MAX_QUANTITY);
-				// maybe this isn't needed? original doesn't do it here..
-				targetitem->callUsecodeEvent_combine();
-			} else {
-				targetitem->setQuality(newquant);
-				targetitem->callUsecodeEvent_combine();
-				// combined, so delete other
-				item->destroy();
-			}
+			mergeItems(item, targetitem);
 			return;
 		}
 	}
@@ -572,6 +545,45 @@ void ContainerGump::DropItem(Item *item, int mx, int my) {
 		_draggingX = mx - _itemArea.left - dox;
 		_draggingY = my - _itemArea.top - doy;
 		item->setGumpLocation(_draggingX, _draggingY);
+	}
+}
+
+Item *ContainerGump::createSplitTarget(Item *item) {
+	Item *splittarget = ItemFactory::createItem(
+	                        item->getShape(), item->getFrame(), 0,
+	                        item->getFlags() & (Item::FLG_DISPOSABLE | Item::FLG_OWNED | Item::FLG_INVISIBLE | Item::FLG_FLIPPED | Item::FLG_FAST_ONLY | Item::FLG_LOW_FRICTION), item->getNpcNum(), item->getMapNum(),
+	                        item->getExtFlags() & (Item::EXT_SPRITE | Item::EXT_HIGHLIGHT | Item::EXT_TRANSPARENT), true);
+	if (!splittarget) {
+		warning("ContainerGump failed to create item (%u,%u) while splitting",
+			item->getShape(), item->getFrame());
+	}
+	return splittarget;
+}
+
+void ContainerGump::splitItem(Item *item, Item *splittarget) {
+	SliderGump *slidergump = new SliderGump(100, 100,
+	                                        0, item->getQuality(),
+	                                        item->getQuality());
+	slidergump->InitGump(0);
+	slidergump->CreateNotifier(); // manually create notifier
+	Process *notifier = slidergump->GetNotifyProcess();
+	SplitItemProcess *splitproc = new SplitItemProcess(item, splittarget);
+	Kernel::get_instance()->addProcess(splitproc);
+	splitproc->waitFor(notifier);
+}
+
+void ContainerGump::mergeItems(Item *item, Item *target) {
+	uint16 newquant = target->getQuality() + item->getQuality();
+	if (newquant > Item::MAX_QUANTITY) {
+		item->setQuality(newquant - Item::MAX_QUANTITY);
+		target->setQuality(Item::MAX_QUANTITY);
+		// maybe this isn't needed? original doesn't do it here..
+		target->callUsecodeEvent_combine();
+	} else {
+		target->setQuality(newquant);
+		target->callUsecodeEvent_combine();
+		// combined, so delete other
+		item->destroy();
 	}
 }
 

@@ -87,6 +87,15 @@ protected:
 
 	void getItemCoords(Item *item, int32 &itemx, int32 &itemy);
 
+	//! Create an empty item to split a stack into
+	Item *createSplitTarget(Item *item);
+
+	//! Ask for the amount to move from item to splittarget
+	void splitItem(Item *item, Item *splittarget);
+
+	//! Merge the quantity of item into target
+	void mergeItems(Item *item, Item *target);
+
 	Common::Rect32 _itemArea;
 
 	bool _displayDragging;
