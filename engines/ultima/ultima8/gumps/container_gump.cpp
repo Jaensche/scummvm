@@ -21,6 +21,7 @@
 
 #include "ultima/ultima.h"
 #include "ultima/ultima8/gumps/container_gump.h"
+#include "ultima/ultima8/gumps/grid_container_gump.h"
 
 #include "ultima/ultima8/gfx/shape.h"
 #include "ultima/ultima8/gfx/shape_frame.h"
@@ -107,7 +108,8 @@ void ContainerGump::run() {
 		int32 maxx = _itemArea.width() + fr->_xoff - fr->_width;
 		int32 maxy = _itemArea.height() + fr->_yoff - fr->_height;
 
-		if (itemx == 0xFF && itemy == 0xFF) {
+		// Items placed in the grid inventory get a random position too
+		if ((itemx == 0xFF && itemy == 0xFF) || GridContainerGump::isCellLocation(itemx, itemy)) {
 			// randomize position
 			// TODO: maybe try to put it somewhere where it doesn't overlap others?
 

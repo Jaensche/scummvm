@@ -72,6 +72,10 @@ public:
 	//! Is this the avatar's backpack, shown on the right side?
 	bool isRightPanel() const;
 
+	//! Is this gump location a grid cell rather than a pixel position
+	//! of the original gumps?
+	static bool isCellLocation(int32 x, int32 y);
+
 protected:
 	void GetItemLocation(int32 lerp_factor) override;
 
@@ -99,6 +103,10 @@ private:
 	void getItemPaintPosition(Item *item, int col, int row, int32 &itemx, int32 &itemy) const;
 	void updateLayout();
 	void assignCells();
+
+	//! Get the cell of an item, false if it doesn't have one
+	static bool getItemCell(const Item *item, int32 &col, int32 &row);
+	static void setItemCell(Item *item, int32 col, int32 row);
 
 	// Rows count across all pages, so row / GRID_ROWS is the page of a cell
 	bool isRowOnPage(int row) const;

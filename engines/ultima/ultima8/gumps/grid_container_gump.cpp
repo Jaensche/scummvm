@@ -51,6 +51,9 @@ static const int QUANTITY_FONT = 3;
 static const int32 CLOSE_RANGE = 256;
 // Ticks to wait for a game script to close the panel
 static const int CLOSE_TIMEOUT = 30;
+// Added to the column of a cell when stored as gump location. Pixel
+// positions in the original gumps are never this large.
+static const int32 CELL_MARKER = 0xC0;
 
 GridContainerGump::GridContainerGump() : ContainerGump(), _cellSize(0),
 	_page(0), _numPages(1), _dragPageFlipped(false),
@@ -227,8 +230,7 @@ void GridContainerGump::assignCells() {
 			continue;
 
 		int32 col, row;
-		item->getGumpLocation(col, row);
-		if (col < GRID_COLUMNS && row < totalRows && !used[row][col]) {
+		if (getItemCell(item, col, row) && !used[row][col]) {
 			used[row][col] = true;
 			lastRow = MAX(lastRow, row);
 		} else {
@@ -245,23 +247,34 @@ void GridContainerGump::assignCells() {
 		if (cell == totalRows * GRID_COLUMNS)
 			break;
 
-		item->setGumpLocation(cell % GRID_COLUMNS, cell / GRID_COLUMNS);
+		setItemCell(item, cell % GRID_COLUMNS, cell / GRID_COLUMNS);
 		used[cell / GRID_COLUMNS][cell % GRID_COLUMNS] = true;
 		lastRow = MAX(lastRow, cell / GRID_COLUMNS);
 	}
 
-	// Show the pages in use, plus an empty one if they are all full
-	_numPages = lastRow / GRID_ROWS + 1;
-	if (_numPages < MAX_PAGES) {
-		bool full = true;
-		for (int row = (_numPages - 1) * GRID_ROWS; row < _numPages * GRID_ROWS && full; row++) {
-			for (int col = 0; col < GRID_COLUMNS && full; col++)
-				full = used[row][col];
-		}
-		if (full)
-			_numPages++;
-	}
+	// The backpack always has all pages, other containers one. More are
+	// only shown if the items don't fit.
+	_numPages = MAX(isRightPanel() ? MAX_PAGES : 1, lastRow / GRID_ROWS + 1);
 	_page = MIN(_page, _numPages - 1);
+}
+
+bool GridContainerGump::isCellLocation(int32 x, int32 y) {
+	return x >= CELL_MARKER && x < CELL_MARKER + GRID_COLUMNS && y < MAX_PAGES * GRID_ROWS;
+}
+
+bool GridContainerGump::getItemCell(const Item *item, int32 &col, int32 &row) {
+	int32 x = 0, y = 0;
+	item->getGumpLocation(x, y);
+	if (!isCellLocation(x, y))
+		return false;
+
+	col = x - CELL_MARKER;
+	row = y;
+	return true;
+}
+
+void GridContainerGump::setItemCell(Item *item, int32 col, int32 row) {
+	item->setGumpLocation(CELL_MARKER + col, row);
 }
 
 bool GridContainerGump::isRowOnPage(int row) const {
@@ -310,8 +323,7 @@ Item *GridContainerGump::getItemInCell(int col, int row) const {
 			continue;
 
 		int32 itemcol, itemrow;
-		item->getGumpLocation(itemcol, itemrow);
-		if (itemcol == col && itemrow == row)
+		if (getItemCell(item, itemcol, itemrow) && itemcol == col && itemrow == row)
 			return item;
 	}
 	return nullptr;
@@ -362,8 +374,7 @@ void GridContainerGump::PaintThis(RenderSurface *surf, int32 lerp_factor, bool s
 			continue;
 
 		int32 col, row;
-		item->getGumpLocation(col, row);
-		if (col >= GRID_COLUMNS || !isRowOnPage(row))
+		if (!getItemCell(item, col, row) || !isRowOnPage(row))
 			continue;
 
 		Common::Rect32 cell = getCellRect(col, row);
@@ -387,8 +398,8 @@ void GridContainerGump::paintItem(RenderSurface *surf, Item *item, const Common:
 
 	int32 maxSize = cell.width() - 2;
 	if (fr->_width <= maxSize && fr->_height <= maxSize) {
-		int32 col, row, itemx, itemy;
-		item->getGumpLocation(col, row);
+		int32 col = 0, row = 0, itemx, itemy;
+		getItemCell(item, col, row);
 		getItemPaintPosition(item, col, row, itemx, itemy);
 		surf->Paint(s, item->getFrame(), itemx, itemy);
 		return;
@@ -580,8 +591,7 @@ bool GridContainerGump::GetLocationOfItem(uint16 itemid, int32 &gx, int32 &gy,
 	if (!item || item->getParent() != _owner) return false;
 
 	int32 col, row;
-	item->getGumpLocation(col, row);
-	if (col >= GRID_COLUMNS || !isRowOnPage(row)) return false;
+	if (!getItemCell(item, col, row) || !isRowOnPage(row)) return false;
 
 	Common::Rect32 cell = getCellRect(col, row);
 	gx = cell.left + cell.width() / 2;
@@ -666,8 +676,8 @@ bool GridContainerGump::StartDraggingItem(Item *item, int mx, int my) {
 	MainActor *avatar = getMainActor();
 	if (!avatar->canReach(c, 128)) return false;
 
-	int32 col, row, itemx, itemy;
-	item->getGumpLocation(col, row);
+	int32 col = 0, row = 0, itemx, itemy;
+	getItemCell(item, col, row);
 	getItemPaintPosition(item, col, row, itemx, itemy);
 	Mouse::get_instance()->setDraggingOffset(mx - itemx, my - itemy);
 
@@ -740,9 +750,11 @@ void GridContainerGump::DropItem(Item *item, int mx, int my) {
 
 	case DROP_SWAP: {
 		int32 oldcol, oldrow;
-		item->getGumpLocation(oldcol, oldrow);
-		target->setGumpLocation(oldcol, oldrow);
-		item->setGumpLocation(col, row);
+		if (getItemCell(item, oldcol, oldrow))
+			setItemCell(target, oldcol, oldrow);
+		else
+			target->randomGumpLocation();
+		setItemCell(item, col, row);
 		break;
 	}
 
@@ -763,7 +775,7 @@ void GridContainerGump::DropItem(Item *item, int mx, int my) {
 		if (target && target != placed)
 			placed->randomGumpLocation();
 		else
-			placed->setGumpLocation(col, row);
+			setItemCell(placed, col, row);
 		break;
 	}
 	}
