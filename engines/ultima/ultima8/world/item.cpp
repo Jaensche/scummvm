@@ -1975,13 +1975,14 @@ void Item::leaveFastArea() {
 		// NB: destroy() creates a DestroyItemProcess to actually
 		// delete the item in this case.
 	}
-	// If we have a gravity process, move us to the ground
+	// If we have a gravity process, stop falling where we are. Moving to
+	// z 0 is wrong on raised ground: e.g. glob items are already gone
+	// outside the fast area, so this dropped NPCs through cliffs (bug #16036).
 	else if (_gravityPid) {
 		Process *p = Kernel::get_instance()->getProcess(_gravityPid);
 		if (p) {
 			p->terminateDeferred();
 			_gravityPid = 0;
-			collideMove(_x, _y, 0, true, false);
 		}
 	}
 }
