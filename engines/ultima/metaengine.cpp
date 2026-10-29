@@ -183,6 +183,17 @@ static const ADExtraGuiOptionsMap optionsList[] = {
 			0
 		}
 	},
+	{
+		GAMEOPTION_KEEP_SPELL_ITEMS,
+		{
+			_s("Keep necromancy spell items"),
+			_s("Necromancy spell items are not used up when cast."),
+			"keep_spell_items",
+			false,
+			0,
+			0
+		}
+	},
 	AD_EXTRA_GUI_OPTIONS_TERMINATOR
 };
 

@@ -586,6 +586,7 @@ Common::Error Ultima8Engine::startupGame() {
 	ConfMan.registerDefault("interpolate", _gameInfo->_type == GameInfo::GAME_U8);
 	ConfMan.registerDefault("cheat", false);
 	ConfMan.registerDefault("grid_inventory", false);
+	ConfMan.registerDefault("keep_spell_items", false);
 
 	bool loaded = _game->loadFiles();
 	if (!loaded)

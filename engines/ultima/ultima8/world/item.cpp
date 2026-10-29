@@ -3285,6 +3285,16 @@ uint32 Item::I_destroy(const uint8 *args, unsigned int /*argsize*/) {
 	if (!item || item->getObjId() == kMainActorId)
 		return 0;
 
+	// Necromancy spell items destroy themselves at the end of their use
+	// event. Optionally keep them, but only when destroyed by their own
+	// usecode, so other destruction (e.g. traps) still works.
+	static const uint32 NECROMANCY_ITEM_SHAPE = 746; // CONSTANT!
+	if (GAME_IS_U8 && item->getShape() == NECROMANCY_ITEM_SHAPE && ConfMan.getBool("keep_spell_items")) {
+		UCProcess *proc = dynamic_cast<UCProcess *>(Kernel::get_instance()->getRunningProcess());
+		if (proc && proc->getClassId() == NECROMANCY_ITEM_SHAPE)
+			return 0;
+	}
+
 	item->destroy();
 
 	return 0;
