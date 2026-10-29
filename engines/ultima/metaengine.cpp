@@ -194,6 +194,17 @@ static const ADExtraGuiOptionsMap optionsList[] = {
 			0
 		}
 	},
+	{
+		GAMEOPTION_PENTAGRAM_PANEL,
+		{
+			_s("Enable ritual panel for pentagrams"),
+			_s("Using a pentagram opens a panel to place the candles, focus and reagents of a sorcery ritual."),
+			"pentagram_panel",
+			false,
+			0,
+			0
+		}
+	},
 	AD_EXTRA_GUI_OPTIONS_TERMINATOR
 };
 

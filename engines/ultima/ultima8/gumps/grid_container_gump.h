@@ -76,6 +76,15 @@ public:
 	//! of the original gumps?
 	static bool isCellLocation(int32 x, int32 y);
 
+	//! Close all panels on the left side of the screen
+	static void closeLeftPanels();
+
+	// Painting helpers shared with other panels
+	static void getItemPaintPosition(Item *item, const Common::Rect32 &cell, int32 &itemx, int32 &itemy);
+	static void paintItem(RenderSurface *surf, Item *item, const Common::Rect32 &cell);
+	static void paintQuantity(RenderSurface *surf, Item *item, const Common::Rect32 &cell);
+	static void paintText(RenderSurface *surf, const Common::String &text, int32 x, int32 y);
+
 protected:
 	void GetItemLocation(int32 lerp_factor) override;
 
@@ -100,7 +109,6 @@ private:
 	GridContainerGump *getParentPanel() const;
 
 	DropAction getDropAction(Item *item, int32 mx, int32 my, int &col, int &row, Item *&target);
-	void getItemPaintPosition(Item *item, int col, int row, int32 &itemx, int32 &itemy) const;
 	void updateLayout();
 	void assignCells();
 
@@ -118,11 +126,8 @@ private:
 	int getPageArrowAt(int32 mx, int32 my) const;
 	void changePage(int delta);
 
-	void paintItem(RenderSurface *surf, Item *item, const Common::Rect32 &cell);
-	void paintScaled(RenderSurface *surf, const Shape *s, uint32 frameNum, const Common::Rect32 &dest);
-	void paintQuantity(RenderSurface *surf, Item *item, const Common::Rect32 &cell);
+	static void paintScaled(RenderSurface *surf, const Shape *s, uint32 frameNum, const Common::Rect32 &dest);
 	void paintFooter(RenderSurface *surf);
-	void paintText(RenderSurface *surf, const Common::String &text, int32 x, int32 y);
 
 	int32 _cellSize;
 	Common::Rect32 _footerArea;

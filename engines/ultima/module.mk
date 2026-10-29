@@ -520,6 +520,7 @@ MODULE_OBJS += \
 	ultima8/gumps/movie_gump.o \
 	ultima8/gumps/paged_gump.o \
 	ultima8/gumps/paperdoll_gump.o \
+	ultima8/gumps/pentagram_gump.o \
 	ultima8/gumps/quit_gump.o \
 	ultima8/gumps/readable_gump.o \
 	ultima8/gumps/resizable_gump.o \

@@ -23,6 +23,7 @@
 #include "graphics/fontman.h"
 
 #include "ultima/ultima8/gumps/grid_container_gump.h"
+#include "ultima/ultima8/gumps/pentagram_gump.h"
 
 #include "ultima/ultima8/gfx/shape.h"
 #include "ultima/ultima8/gfx/shape_frame.h"
@@ -96,9 +97,7 @@ void GridContainerGump::InitGump(Gump *newparent, bool take_focus) {
 		if (other && c && isInsideContainer(c, other->_owner)) {
 			other->HideGump();
 		} else {
-			// Close the shown panel and all hidden ones behind it
-			while ((other = dynamic_cast<GridContainerGump *>(desktop->FindGump(&isLeftPanel))) != nullptr)
-				other->requestClose();
+			closeLeftPanels();
 		}
 	}
 
@@ -121,6 +120,19 @@ void GridContainerGump::Close(bool no_del) {
 		parentPanel->UnhideGump();
 
 	ContainerGump::Close(no_del);
+}
+
+void GridContainerGump::closeLeftPanels() {
+	Gump *desktop = Ultima8Engine::get_instance()->getDesktopGump();
+
+	// Close the shown panel and all hidden ones behind it
+	GridContainerGump *panel;
+	while ((panel = dynamic_cast<GridContainerGump *>(desktop->FindGump(&isLeftPanel))) != nullptr)
+		panel->requestClose();
+
+	Gump *pentagram;
+	while ((pentagram = desktop->FindGump<PentagramGump>()) != nullptr)
+		pentagram->Close();
 }
 
 bool GridContainerGump::isRightPanel() const {
@@ -398,9 +410,8 @@ void GridContainerGump::paintItem(RenderSurface *surf, Item *item, const Common:
 
 	int32 maxSize = cell.width() - 2;
 	if (fr->_width <= maxSize && fr->_height <= maxSize) {
-		int32 col = 0, row = 0, itemx, itemy;
-		getItemCell(item, col, row);
-		getItemPaintPosition(item, col, row, itemx, itemy);
+		int32 itemx, itemy;
+		getItemPaintPosition(item, cell, itemx, itemy);
 		surf->Paint(s, item->getFrame(), itemx, itemy);
 		return;
 	}
@@ -481,14 +492,13 @@ void GridContainerGump::paintScaled(RenderSurface *surf, const Shape *s, uint32 
 	}
 }
 
-void GridContainerGump::getItemPaintPosition(Item *item, int col, int row, int32 &itemx, int32 &itemy) const {
+void GridContainerGump::getItemPaintPosition(Item *item, const Common::Rect32 &cell, int32 &itemx, int32 &itemy) {
 	const Shape *s = item->getShapeObject();
 	assert(s);
 	const ShapeFrame *fr = s->getFrame(item->getFrame());
 	assert(fr);
 
 	// Center the frame in the cell
-	Common::Rect32 cell = getCellRect(col, row);
 	itemx = cell.left + (cell.width() - fr->_width) / 2 + fr->_xoff;
 	itemy = cell.top + (cell.height() - fr->_height) / 2 + fr->_yoff;
 }
@@ -678,7 +688,7 @@ bool GridContainerGump::StartDraggingItem(Item *item, int mx, int my) {
 
 	int32 col = 0, row = 0, itemx, itemy;
 	getItemCell(item, col, row);
-	getItemPaintPosition(item, col, row, itemx, itemy);
+	getItemPaintPosition(item, getCellRect(col, row), itemx, itemy);
 	Mouse::get_instance()->setDraggingOffset(mx - itemx, my - itemy);
 
 	return true;

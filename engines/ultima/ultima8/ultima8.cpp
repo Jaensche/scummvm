@@ -587,6 +587,7 @@ Common::Error Ultima8Engine::startupGame() {
 	ConfMan.registerDefault("cheat", false);
 	ConfMan.registerDefault("grid_inventory", false);
 	ConfMan.registerDefault("keep_spell_items", false);
+	ConfMan.registerDefault("pentagram_panel", false);
 
 	bool loaded = _game->loadFiles();
 	if (!loaded)

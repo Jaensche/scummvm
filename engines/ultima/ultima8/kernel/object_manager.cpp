@@ -31,6 +31,7 @@
 #include "ultima/ultima8/gumps/bark_gump.h"
 #include "ultima/ultima8/gumps/paperdoll_gump.h"
 #include "ultima/ultima8/gumps/grid_container_gump.h"
+#include "ultima/ultima8/gumps/pentagram_gump.h"
 #include "ultima/ultima8/gumps/widgets/text_widget.h"
 #include "ultima/ultima8/gumps/widgets/button_widget.h"
 #include "ultima/ultima8/gumps/widgets/sliding_widget.h"
@@ -377,6 +378,7 @@ void ObjectManager::setupLoaders() {
 	addObjectLoader("ContainerGump", ObjectLoader<ContainerGump>::load);
 	addObjectLoader("PaperdollGump", ObjectLoader<PaperdollGump>::load);
 	addObjectLoader("GridContainerGump", ObjectLoader<GridContainerGump>::load);
+	addObjectLoader("PentagramGump", ObjectLoader<PentagramGump>::load);
 	addObjectLoader("TextWidget", ObjectLoader<TextWidget>::load);
 	addObjectLoader("ButtonWidget", ObjectLoader<ButtonWidget>::load);
 	addObjectLoader("SlidingWidget", ObjectLoader<SlidingWidget>::load);

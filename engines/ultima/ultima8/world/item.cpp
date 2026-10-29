@@ -46,6 +46,7 @@
 #include "ultima/ultima8/world/actors/actor_bark_notify_process.h"
 #include "ultima/ultima8/gumps/paperdoll_gump.h"
 #include "ultima/ultima8/gumps/grid_container_gump.h"
+#include "ultima/ultima8/gumps/pentagram_gump.h"
 #include "ultima/ultima8/gumps/game_map_gump.h"
 #include "ultima/ultima8/world/world_point.h"
 #include "ultima/ultima8/world/gravity_process.h"
@@ -1672,6 +1673,13 @@ uint32 Item::use() {
 			}
 			return 0;
 		}
+	}
+
+	// Optionally open a panel to set up the ritual instead of performing
+	// it right away. The panel performs it with the use event.
+	if (GAME_IS_U8 && _shape == PentagramGump::PENTAGRAM_SHAPE && ConfMan.getBool("pentagram_panel")) {
+		PentagramGump::toggle(this);
+		return 0;
 	}
 
 	return callUsecodeEvent_use();
