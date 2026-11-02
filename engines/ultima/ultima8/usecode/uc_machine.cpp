@@ -1138,8 +1138,11 @@ void UCMachine::execProcess(UCProcess *p) {
 					if (ui16a < l->getSize()) {
 						p->_stack.push((*l)[ui16a], ui32a);
 					} else {
-						// WORKAROUND
+						// WORKAROUND: Push zero for indexes out of range. Pushing
+						// nothing breaks the stack of the process, e.g. stacks of
+						// obsidian were destroyed when they couldn't be merged.
 						warning("ignore 0x44 request to push %d from list len %d", ui16a, l->getSize());
+						p->_stack.push0(ui32a);
 					}
 				}
 			}
