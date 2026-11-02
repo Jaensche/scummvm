@@ -67,10 +67,12 @@ static const int32 CANDLE_DIR[5][2] = {
 // pentagram position in any direction.
 static const int32 FOCUS_POS[2] = { -112, -112 };
 
-// Spots for reagents next to each candle, not blocking the candles or the
-// focus. The usecode accepts reagents anywhere on the pentagram.
-static const int32 REAGENT_POS[5][2] = {
-	{ -106, -74 }, { -185, -77 }, { -230, -159 }, { -159, -230 }, { -77, -185 }
+// Two spots for reagents next to each candle, not blocking the candles or
+// the focus. Some spells need two reagents at one point. The usecode
+// accepts reagents anywhere on the pentagram.
+static const int32 REAGENT_POS[10][2] = {
+	{ -106, -74 }, { -185, -77 }, { -230, -159 }, { -159, -230 }, { -77, -185 },
+	{ -88, -34 }, { -222, -78 }, { -230, -196 }, { -204, -248 }, { -78, -222 }
 };
 
 static bool isRitualCandle(const Item *item) {
@@ -149,16 +151,19 @@ void PentagramGump::updateLayout() {
 	_x = 0;
 	_y = 0;
 
-	// Same cell size as the grid panels
+	// Same cell size as the grid panels, but small enough to fit the
+	// reagent slots between the two top points of the star
+	int32 size = width - 2 * PANEL_MARGIN;
 	_cellSize = MIN((width - 2 * PANEL_MARGIN) / GridContainerGump::GRID_COLUMNS,
 	                (height - 2 * PANEL_MARGIN) / (GridContainerGump::GRID_ROWS + 1));
+	_cellSize = MIN(_cellSize, size * 17 / 100);
 
-	// The star fills the width of the panel, with the reagent slots just
-	// inside the candle slots. The button is below it.
-	int32 size = width - 2 * PANEL_MARGIN;
+	// The left and right points have their reagent slots above and below,
+	// so they can go to the edge of the panel. All others have them left
+	// and right.
 	int32 cx = width / 2;
-	int32 cy = PANEL_MARGIN + size / 2;
-	int32 radius = size / 2 - _cellSize / 2;
+	int32 radius = (size / 2 - _cellSize / 2) * 1000 / 951;
+	int32 cy = PANEL_MARGIN + radius * 809 / 1000 + _cellSize / 2;
 
 	for (int i = 0; i < NUM_SLOTS; i++) {
 		int32 x = cx, y = cy;
@@ -166,16 +171,22 @@ void PentagramGump::updateLayout() {
 			x += radius * CANDLE_DIR[i][0] / 1000;
 			y += radius * CANDLE_DIR[i][1] / 1000;
 		} else if (i > NUM_CANDLES) {
-			int point = i - NUM_CANDLES - 1;
-			x += (radius - _cellSize) * CANDLE_DIR[point][0] / 1000;
-			y += (radius - _cellSize) * CANDLE_DIR[point][1] / 1000;
+			int reagent = i - NUM_CANDLES - 1;
+			int point = reagent % NUM_CANDLES;
+			int side = reagent < NUM_CANDLES ? -1 : 1;
+			x += radius * CANDLE_DIR[point][0] / 1000;
+			y += radius * CANDLE_DIR[point][1] / 1000;
+			if (point == 1 || point == 4)
+				y += side * _cellSize;
+			else
+				x += side * _cellSize;
 		}
 		_slots[i]._rect = Common::Rect32(_cellSize, _cellSize);
 		_slots[i]._rect.moveTo(x - _cellSize / 2, y - _cellSize / 2);
 	}
 
 	const Graphics::Font *font = FontMan.getFontByUsage(Graphics::FontManager::kConsoleFont);
-	int32 top = PANEL_MARGIN + size + _cellSize / 2;
+	int32 top = cy + radius + _cellSize / 2 + _cellSize / 4;
 	_buttonRect = Common::Rect32(PANEL_MARGIN, top, width - PANEL_MARGIN, top + font->getFontHeight() + 8);
 }
 

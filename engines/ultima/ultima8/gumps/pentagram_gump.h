@@ -79,7 +79,7 @@ private:
 	};
 
 	static const int NUM_CANDLES = 5;
-	static const int NUM_REAGENTS = 5;
+	static const int NUM_REAGENTS = 10;
 	static const int NUM_SLOTS = NUM_CANDLES + 1 + NUM_REAGENTS;
 
 	void initSlots();
